@@ -9,7 +9,7 @@ from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
 from torchrl.envs import (Compose, DoubleToFloat, ObservationNorm, StepCounter,
-						  TransformedEnv)
+						  TransformedEnv, CatTensors)
 from torchrl.envs.libs.gym import GymEnv
 from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
 from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
@@ -45,8 +45,9 @@ base_env = GymEnv("GazeboPlaneEnv", device=device)
 env = TransformedEnv(
 	base_env,
 	Compose(
+		CatTensors(in_keys=["airspeed", "altitude", "fuel_remaining", "wind_dir", "wind_speed"], out_key="observation"),
 		# normalize observations
-		ObservationNorm(in_keys=["airspeed", "altitude", "fuel_remaining", "wind_dir", "wind_speed"]),
+		ObservationNorm(in_keys=["observation"]),
 		DoubleToFloat(),
 		StepCounter(),
 	),
@@ -67,7 +68,7 @@ actor_net = nn.Sequential(
 )
 
 policy_module = TensorDictModule(
-	actor_net, in_keys=["airspeed", "altitude", "fuel_remaining", "wind_dir", "wind_speed"], out_keys=["loc", "scale"]
+	actor_net, in_keys=["observation"], out_keys=["loc", "scale"]
 )
 
 policy_module = ProbabilisticActor(
