@@ -53,7 +53,6 @@ class MavlinkInterface:
 			verify_ack(self.connection, mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, f'Failed to request {name}')
 
 		self.msl_to_wgs84 = pyproj.Transformer.from_crs(4979, 5773, always_xy=True)
-		self.waypoint_number = 0
 
 	# ------------------------ state reading ------------------------
 
@@ -150,8 +149,14 @@ class MavlinkInterface:
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_DO_SET_MODE, 0, mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-											  mavlink.PLANE_MODE_TAKEOFF,
+											  mavlink.PLANE_MODE_AUTO,
 											  0, 0, 0, 0, 0)
+		self.connection.waypoint_clear_all_send()
+		self.connection.waypoint_count_send(1)
+		self.connection.mav.mission_item_int_send(self.connection.target_system, self.connection.target_component, 0,
+												  mavlink.MAV_FRAME_GLOBAL,
+												  mavlink.MAV_CMD_NAV_TAKEOFF, 1, 0, 0, 10, 0, 0,
+												  0, 0, 10, 0)
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
 		# self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
