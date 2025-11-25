@@ -59,9 +59,9 @@ class GazeboPlaneEnv(gym.Env):
 		obs = self._get_obs()
 		max_dist_km = 500
 		max_lat_deg = max_dist_km / 111.111
-		lat_delta = self.np_random.uniform(0, max_lat_deg)
+		lat_delta = self.np_random.uniform(-max_lat_deg, max_lat_deg)
 		max_lon_deg = max_lat_deg * math.cos(math.radians(lat_delta)) - lat_delta * 111.111
-		lon_delta = self.np_random.uniform(0, max_lon_deg)
+		lon_delta = self.np_random.uniform(-max_lon_deg, max_lon_deg)
 		self.start_lat = obs['latitude']
 		self.start_lon = obs['longitude']
 		self.positions = [(self.start_lat, self.start_lon)]
