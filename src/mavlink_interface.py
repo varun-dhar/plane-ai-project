@@ -150,12 +150,12 @@ class MavlinkInterface:
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_DO_SET_MODE, 0, mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-											  mavlink.PLANE_MODE_AUTO,
+											  mavlink.PLANE_MODE_TAKEOFF,
 											  0, 0, 0, 0, 0)
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
-		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
-											  mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, 0, 10)
+		# self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
+		#									  mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, 0, 10)
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_DO_SET_MODE, 0, mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
 											  mavlink.PLANE_MODE_GUIDED,
