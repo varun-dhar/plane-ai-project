@@ -25,7 +25,7 @@ class Action(enum.IntEnum):
 def change_heading(iface: MavlinkInterface, action: Action) -> None:
     """Send a simple yaw command to adjust heading."""
     iface._ensure_connected()
-    master = iface.master
+    master = iface.connection
     assert master is not None
 
     heading_map = {
