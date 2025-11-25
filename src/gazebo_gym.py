@@ -9,12 +9,12 @@ import pyproj
 import rewards
 import os
 
-from src.mavlink_interface import MavlinkInterface
+from mavlink_interface import MavlinkInterface
 
 
 class GazeboPlaneEnv(gym.Env):
 	def __init__(self):
-        home = os.getenv("HOME")
+		home = os.getenv("HOME")
 		fixture = TestFixture(f'{home}/sitl_models/Gazebo/worlds/vtail_runway.sdf')
 		fixture.finalize()
 
