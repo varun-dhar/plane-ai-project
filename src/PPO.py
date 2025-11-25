@@ -16,6 +16,7 @@ from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
 from torchrl.objectives import ClipPPOLoss
 from torchrl.objectives.value import GAE
 from tqdm import tqdm
+import gazebo_gym
 
 device = (
     torch.device(0)
