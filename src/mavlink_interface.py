@@ -26,7 +26,7 @@ def verify_ack(connection: mavutil.mavtcp, cmd_id: int, failure_message: str, di
 class MavlinkInterface:
 	def __init__(
 			self,
-			connection_str: str = "tcp:127.0.0.1:5760",
+			connection_str: str = "udp:127.0.0.1:14550",
 			timeout_s: int = 30,
 	) -> None:
 		self.timeout_s = timeout_s
