@@ -23,6 +23,7 @@ device = (
 	if torch.cuda.is_available()
 	else torch.device("cpu")
 )
+print(device)
 num_cells = 2  # number of cells in each layer i.e. output dim.
 lr = 3e-4
 max_grad_norm = 1.0
@@ -52,7 +53,9 @@ env = TransformedEnv(
 		StepCounter(),
 	),
 )
-env.transform[0].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
+env.transform[1].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
+
+print('stats inited')
 
 check_env_specs(env)
 
@@ -93,6 +96,10 @@ value_net = nn.Sequential(
 	nn.Tanh(),
 	nn.LazyLinear(1, device=device),
 )
+
+with torch.no_grad():
+    dummy = env.reset().unsqueeze(0)
+    value_net(dummy["observation"])
 
 value_module = ValueOperator(
 	module=value_net,
@@ -136,6 +143,8 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
 logs = defaultdict(list)
 pbar = tqdm(total=total_frames)
 eval_str = ""
+
+print('training')
 
 # We iterate over the collector until it reaches the total number of frames it was
 # designed to collect:
@@ -200,3 +209,18 @@ for i, tensordict_data in enumerate(collector):
 	# We're also using a learning rate scheduler. Like the gradient clipping,
 	# this is a nice-to-have but nothing necessary for PPO to work.
 	scheduler.step()
+
+print("done training")
+torch.save(actor_net.to(torch.device('cpu')).state_dict(), "ppo_actor_weights.pt")
+print("saving value module")
+
+value_net_cpu = value_net.to(torch.device('cpu'))
+with torch.no_grad():
+    dummy = env.reset().unsqueeze(0)
+    value_net_cpu(dummy["observation"])
+
+
+print('did dummy forward')
+torch.save(value_net_cpu.state_dict(), "ppo_critic_weights.pt")
+
+

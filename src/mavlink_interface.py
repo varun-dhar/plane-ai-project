@@ -12,6 +12,7 @@ from pymavlink import mavutil, mavwp
 from pymavlink.dialects.v20 import ardupilotmega as mavlink
 import pyproj
 import math
+import time
 
 
 def verify_ack(connection: mavutil.mavtcp, cmd_id: int, failure_message: str, die: bool = True):
@@ -53,6 +54,11 @@ class MavlinkInterface:
 			verify_ack(self.connection, mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, f'Failed to request {name}')
 
 		self.msl_to_wgs84 = pyproj.Transformer.from_crs(4979, 5773, always_xy=True)
+
+		self.battery_max_current = 29
+		self.battery_ah = 3
+		self.battery_remaining_pct = 100
+		self.last_time_step = 0
 
 	# ------------------------ state reading ------------------------
 
@@ -112,8 +118,10 @@ class MavlinkInterface:
 		# Speed + heading
 		if hud is not None:
 			groundspeed_mps = float(hud.airspeed)
+			throttle = hud.throttle
 		else:
 			groundspeed_mps = 0.0
+			throttle = 0
 
 		# Wind
 		if wind is not None:
@@ -129,6 +137,10 @@ class MavlinkInterface:
 		else:
 			fuel_remaining = 1.0  # assume full if unknown
 
+		batt_used = (throttle * self.battery_max_current * ((time.time_ns()-self.last_time_step)/3.6e12*10)) / self.battery_ah * 100 if self.last_time_step > 0 else 0
+		self.last_time_step = time.time_ns()
+		self.battery_remaining_pct -= batt_used
+
 		if attitude is not None:
 			pitch = math.degrees(attitude.pitch)
 		else:
@@ -139,7 +151,7 @@ class MavlinkInterface:
 			"airspeed": groundspeed_mps,
 			"wind_speed": wind_speed_mps,
 			"wind_dir": wind_dir_deg,
-			"fuel_remaining": fuel_remaining,
+			"fuel_remaining": self.battery_remaining_pct,
 			"latitude": lat,
 			"longitude": lon,
 			"pitch": pitch
@@ -179,21 +191,28 @@ class MavlinkInterface:
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_int_send(self.connection.target_system, self.connection.target_component,
 											 mavlink.MAV_FRAME_GLOBAL,
-											 mavlink.MAV_CMD_DO_CHANGE_SPEED, 0, 0, mavlink.SPEED_TYPE_AIRSPEED,
+											 mavlink.MAV_CMD_GUIDED_CHANGE_SPEED, 0, 0, mavlink.SPEED_TYPE_AIRSPEED,
 											 airspeed, -1, 0, 0, 0, 0)
 		self.connection.mav.command_int_send(self.connection.target_system, self.connection.target_component,
 											 mavlink.MAV_FRAME_GLOBAL,
 											 mavlink.MAV_CMD_DO_CHANGE_ALTITUDE, 0, 0,
 											 alt, mavlink.MAV_FRAME_GLOBAL, 0, 0, 0, 0, 0)
 
-	def set_wind(self, direction: float, speed: float):
+	def set_wind(self, direction: float, speed: float, turbulence: float):
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
 										   'SIM_WIND_SPD'.encode('ascii'), speed, mavlink.MAV_PARAM_TYPE_REAL32)
 		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
 										   'SIM_WIND_DIR'.encode('ascii'), direction, mavlink.MAV_PARAM_TYPE_REAL32)
+		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
+										   'SIM_WIND_TURB'.encode('ascii'), turbulence, mavlink.MAV_PARAM_TYPE_REAL32)
+		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
+										   'SIM_WIND_T_ALT'.encode('ascii'), 3050, mavlink.MAV_PARAM_TYPE_REAL32)
+		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
+										   'SIM_WIND_T'.encode('ascii'), 0, mavlink.MAV_PARAM_TYPE_INT8)
 
 	def reset_battery(self):
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
+		self.battery_remaining_pct = 100
 		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
 										   'SIM_BATT_VOLTAGE'.encode('ascii'), 12.6, mavlink.MAV_PARAM_TYPE_REAL32)

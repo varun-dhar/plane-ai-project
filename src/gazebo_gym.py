@@ -15,24 +15,21 @@ from mavlink_interface import MavlinkInterface
 class GazeboPlaneEnv(gym.Env):
 	def __init__(self):
 		home = os.getenv("HOME")
-		fixture = TestFixture(f'{home}/sitl_models/Gazebo/worlds/vtail_runway.sdf')
-		fixture.finalize()
+		self.fixture = TestFixture(f'{home}/sitl_models/Gazebo/worlds/vtail_runway.sdf')
+		self.fixture.finalize()
 
-		server = fixture.server()
-		server.run(False, 0, False)
+		self.server = self.fixture.server()
+		self.server.run(False, 0, False)
 
 		self.plane = MavlinkInterface()
 		self.observation_space = gym.spaces.Dict({
-			"airspeed": gym.spaces.Box(5., 100., shape=(1, 1), dtype=np.float32),
-			"altitude": gym.spaces.Box(5., 3050., shape=(1, 1), dtype=np.float32),
-			"fuel_remaining": gym.spaces.Box(0., 1., shape=(1, 1), dtype=np.float32),
-			"wind_dir": gym.spaces.Box(0., 2 * np.pi, shape=(1, 1), dtype=np.float32),
-			"wind_speed": gym.spaces.Box(0., 20., shape=(1, 1), dtype=np.float32),
+			"airspeed": gym.spaces.Box(5., 100., shape=(1,), dtype=np.float32),
+			"altitude": gym.spaces.Box(5., 3050., shape=(1,), dtype=np.float32),
+			"fuel_remaining": gym.spaces.Box(0., 1., shape=(1,), dtype=np.float32),
+			"wind_dir": gym.spaces.Box(0., 2 * np.pi, shape=(1,), dtype=np.float32),
+			"wind_speed": gym.spaces.Box(0., 20., shape=(1,), dtype=np.float32),
 		})
-		self.action_space = gym.spaces.Dict({
-			"airspeed": gym.spaces.Box(5., 100., shape=(1, 1), dtype=np.float32),
-			"altitude": gym.spaces.Box(5., 100., shape=(1, 1), dtype=np.float32),
-		})
+		self.action_space = gym.spaces.Box(5., 100., shape=(2,), dtype=np.float32)
 		self.dest_lat: float = 0
 		self.dest_lon: float = 0
 		self.start_lat: float = 0
@@ -47,7 +44,7 @@ class GazeboPlaneEnv(gym.Env):
 
 	@staticmethod
 	def _obs_to_user(obs: dict):
-		return dict(filter(lambda item: item[0] in ('latitude', 'longitude', 'pitch'), obs.items()))
+		return dict(filter(lambda item: item[0] not in ('latitude', 'longitude', 'pitch'), obs.items()))
 
 	def reset(
 			self,
@@ -56,12 +53,13 @@ class GazeboPlaneEnv(gym.Env):
 			options: dict[str, Any] | None = None,
 	) -> tuple[ObsType, dict[str, Any]]:
 		super().reset(seed=seed)
+		#self.server.reset_all()
 		obs = self._get_obs()
 		max_dist_km = 500
 		max_lat_deg = max_dist_km / 111.111
 		lat_delta = self.np_random.uniform(-max_lat_deg, max_lat_deg)
 		max_lon_deg = max_lat_deg * math.cos(math.radians(lat_delta)) - lat_delta * 111.111
-		lon_delta = self.np_random.uniform(-max_lon_deg, max_lon_deg)
+		lon_delta = self.np_random.uniform(-abs(max_lon_deg), abs(max_lon_deg))
 		self.start_lat = obs['latitude']
 		self.start_lon = obs['longitude']
 		self.positions = [(self.start_lat, self.start_lon)]
@@ -70,13 +68,13 @@ class GazeboPlaneEnv(gym.Env):
 		self.plane.reset_battery()
 		self.fuel_left = [obs['fuel_remaining']]
 		self.plane.set_waypoint(self.dest_lat, self.dest_lon, 10)
-		self.plane.set_wind(self.np_random.uniform(0., 360.), self.np_random.uniform(5., 100.))
+		self.plane.set_wind(self.np_random.uniform(0., 360.), self.np_random.uniform(5., 100.), self.np_random.uniform(0., 12.85))
 
 		return self._obs_to_user(obs), {}
 
 	def step(self, action):
-		airspeed = action['airspeed']
-		altitude = action['altitude']
+		airspeed = action[0]
+		altitude = action[1]
 		self.plane.set_speed_alt(airspeed, altitude)
 		obs = self._get_obs()
 		truncated = obs['altitude'] < 5 or obs['altitude'] > 3050
@@ -101,3 +99,5 @@ gym.register(
 	entry_point=GazeboPlaneEnv,
 	max_episode_steps=300,  # Prevent infinite episodes
 )
+
+
