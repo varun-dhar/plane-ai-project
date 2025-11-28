@@ -61,13 +61,13 @@ def change_altitude(
     min_alt_m: float = 50.0,
     max_alt_m: float = 400.0,
 ) -> Optional[float]:
-    """Compute the next altitude target (prints it for now)."""
-    if action not in (Action.UP, Action.DOWN):
+    """Compute the next altitude target)"""
+    if action not in (Action.NORTH, Action.SOUTH):
         return None
 
     state = iface.get_state()
     alt = state["alt_m"]
-    new_alt = alt + delta_m if action == Action.UP else alt - delta_m
+    new_alt = alt + delta_m if action == Action.NORTH else alt - delta_m
     new_alt = max(min_alt_m, min(max_alt_m, new_alt))
     print(f"[ACTION] Altitude {alt:.1f} → {new_alt:.1f} m ({action.name})")
     return new_alt
