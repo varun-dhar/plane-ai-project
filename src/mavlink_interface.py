@@ -24,11 +24,12 @@ def verify_ack(connection: mavutil.mavtcp, cmd_id: int, failure_message: str, di
 		raise Exception(f'{failure_message} {ack.result}')
 	return ack.result == mavlink.MAV_RESULT_ACCEPTED
 
+
 # full startup pipeline
 class MavlinkInterface:
 	def __init__(
 			self,
-			connection_str: str = "udp:127.0.0.1:14550", # connection to SITL
+			connection_str: str = "udp:127.0.0.1:14550",  # connection to SITL
 			timeout_s: int = 30,
 	) -> None:
 		self.timeout_s = timeout_s
@@ -40,8 +41,6 @@ class MavlinkInterface:
 																	 )
 		if self.connection.wait_heartbeat(timeout=self.timeout_s) is None:
 			raise Exception("Could not connect to MAVProxy")
-
-		self.wp = mavwp.MAVWPLoader()
 
 		# request message streams
 		messages = {
@@ -56,9 +55,10 @@ class MavlinkInterface:
 												  msg_id, int(0.1e6), 0, 0, 0, 0, 0, 0)
 			verify_ack(self.connection, mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, f'Failed to request {name}')
 
-		self.msl_to_wgs84 = pyproj.Transformer.from_crs(4979, 5773, always_xy=True) #coordinate transformer
+		# Converter from MSL altitude to WGS84 altitude (geoid -> ellipsoid)
+		self.msl_to_wgs84 = pyproj.Transformer.from_crs(4979, 5773, always_xy=True)
 
-		#battery tracking variables - simulate fuel consumption
+		# battery tracking variables - simulate fuel consumption
 		self.battery_max_current = 29
 		self.battery_ah = 3
 		self.battery_remaining_pct = 100
@@ -66,7 +66,7 @@ class MavlinkInterface:
 
 	# ------------------------ state reading ------------------------
 
-	#RL Loop will call evry step
+	# RL Loop will call evry step
 	def get_state(self) -> dict[str, float]:
 		"""
 		Read the current aircraft state.
@@ -74,7 +74,7 @@ class MavlinkInterface:
 		Returns a dict with:
 		- lat, lon (deg)
 		- alt_m (m)
-		- groundspeed_mps (m/s)
+		- airspeed_mps (m/s)
 		- heading_deg (deg)
 		- wind_speed_mps (m/s)
 		- wind_dir_deg (deg)
@@ -92,7 +92,7 @@ class MavlinkInterface:
 
 		attempts = 0
 		# while loop for attempting to connect to ArduPilot to collect data
-		while attempts < 50 and any(v is None for v in needed.values()): 
+		while attempts < 50 and any(v is None for v in needed.values()):
 			msg = self.connection.recv_match(blocking=True, timeout=0.1)
 			if msg is None or msg.get_type() == "BAD_DATA":
 				attempts += 1
@@ -101,7 +101,7 @@ class MavlinkInterface:
 			# gets the data for each message type from array 'needed'
 			msg_type = msg.get_type()
 			if msg_type in needed:
-				needed[msg_type] = msg 
+				needed[msg_type] = msg
 			else:
 				attempts += 1
 
@@ -125,10 +125,10 @@ class MavlinkInterface:
 
 		# Speed + heading
 		if hud is not None:
-			groundspeed_mps = float(hud.airspeed)
+			airspeed_mps = float(hud.airspeed)
 			throttle = hud.throttle
 		else:
-			groundspeed_mps = 0.0
+			airspeed_mps = 0.0
 			throttle = 0
 
 		# Wind
@@ -145,7 +145,8 @@ class MavlinkInterface:
 		else:
 			fuel_remaining = 1.0  # assume full if unknown
 
-		batt_used = (throttle * self.battery_max_current * ((time.time_ns()-self.last_time_step)/3.6e12*10)) / self.battery_ah * 100 if self.last_time_step > 0 else 0
+		batt_used = (throttle * self.battery_max_current * ((
+																		time.time_ns() - self.last_time_step) / 3.6e12 * 10)) / self.battery_ah * 100 if self.last_time_step > 0 else 0
 		self.last_time_step = time.time_ns()
 		self.battery_remaining_pct -= batt_used
 
@@ -156,7 +157,7 @@ class MavlinkInterface:
 
 		return {
 			"altitude": alt_m,
-			"airspeed": groundspeed_mps,
+			"airspeed": airspeed_mps,
 			"wind_speed": wind_speed_mps,
 			"wind_dir": wind_dir_deg,
 			"fuel_remaining": self.battery_remaining_pct,
@@ -165,7 +166,7 @@ class MavlinkInterface:
 			"pitch": pitch
 		}
 
-	#AUTO loads the mission -> GUIDED gives control back to RL agent.
+	# AUTO loads the mission -> GUIDED gives control back to RL agent.
 	def takeoff(self):
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
@@ -186,7 +187,8 @@ class MavlinkInterface:
 											  mavlink.MAV_CMD_DO_SET_MODE, 0, mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
 											  mavlink.PLANE_MODE_GUIDED,
 											  0, 0, 0, 0, 0)
-    # Sends a single waypoint in GLOBAL frame - airplane target destination
+
+	# Sends a single waypoint in GLOBAL frame - airplane target destination
 	def set_waypoint(self, lat: float, lon: float, alt: float = 10):
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.waypoint_clear_all_send()

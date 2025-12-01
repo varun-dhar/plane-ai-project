@@ -7,7 +7,6 @@ from gz.sim import TestFixture
 import math
 import pyproj
 import rewards
-import os
 
 from mavlink_interface import MavlinkInterface
 
@@ -15,8 +14,7 @@ from mavlink_interface import MavlinkInterface
 class GazeboPlaneEnv(gym.Env):
 	def __init__(self):
 		# gazebo world startup - starts a Gazebo server instance headless with runway world.
-		home = os.getenv("HOME")
-		self.fixture = TestFixture(f'{home}/sitl_models/Gazebo/worlds/vtail_runway.sdf')
+		self.fixture = TestFixture('sitl_models/Gazebo/worlds/vtail_runway.sdf')
 		self.fixture.finalize()
 
 		self.server = self.fixture.server()
@@ -24,7 +22,7 @@ class GazeboPlaneEnv(gym.Env):
 
 		self.plane = MavlinkInterface() # start MavLinkInterface - connection to ArduPilot SITL.
 
-		# obersvation space 1-D box spaces
+		# observation space: 1-D box
 		self.observation_space = gym.spaces.Dict({
 			"airspeed": gym.spaces.Box(5., 100., shape=(1,), dtype=np.float32),
 			"altitude": gym.spaces.Box(5., 3050., shape=(1,), dtype=np.float32),
@@ -33,8 +31,9 @@ class GazeboPlaneEnv(gym.Env):
 			"wind_speed": gym.spaces.Box(0., 20., shape=(1,), dtype=np.float32),
 		})
 		#action space
-		# track starting, ending coorindate, list of positions and fuel
 		self.action_space = gym.spaces.Box(5., 100., shape=(2,), dtype=np.float32)
+
+		# track starting, ending coordinates, list of positions and fuel
 		self.dest_lat: float = 0
 		self.dest_lon: float = 0
 		self.start_lat: float = 0
@@ -42,8 +41,9 @@ class GazeboPlaneEnv(gym.Env):
 		self.positions: list[tuple[float, float]] = []
 		self.fuel_left: list[float] = []
 		self.wgs84_geod = pyproj.Geod(ellps='WGS84') 
-		#switches to AUTO → loads takeoff → arms → switches to GUIDED. ensures the plane is airborne before RL begins.
-		self.plane.takeoff() 
+		# switches to AUTO → loads takeoff → arms → switches to GUIDED. ensures the plane is airborne before RL begins.
+		self.plane.takeoff()
+		self.server.set_paused()
 
 	# returns current state of aircraft
 	def _get_obs(self):
@@ -97,7 +97,7 @@ class GazeboPlaneEnv(gym.Env):
 
 		fuel_diff = obs['fuel_remaining'] - self.fuel_left[-1]
 		_, _, dist_traveled = self.wgs84_geod.inv(plane_lon, plane_lat, self.positions[-1][1], self.positions[-1][0])
-		reward = rewards.reward(airspeed, fuel_diff, dist_traveled, crashed=obs['altitude'] < 5,
+		reward = rewards.reward(fuel_diff, dist_traveled, crashed=obs['altitude'] < 5,
 								stalled=obs['pitch'] > 15,
 								reached=distance < 10)
 		self.positions.append((plane_lat, plane_lon))

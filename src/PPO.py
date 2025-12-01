@@ -98,8 +98,8 @@ value_net = nn.Sequential(
 )
 
 with torch.no_grad():
-    dummy = env.reset().unsqueeze(0)
-    value_net(dummy["observation"])
+	dummy = env.reset().unsqueeze(0)
+	value_net(dummy["observation"])
 
 value_module = ValueOperator(
 	module=value_net,
@@ -212,15 +212,3 @@ for i, tensordict_data in enumerate(collector):
 
 print("done training")
 torch.save(actor_net.to(torch.device('cpu')).state_dict(), "ppo_actor_weights.pt")
-print("saving value module")
-
-value_net_cpu = value_net.to(torch.device('cpu'))
-with torch.no_grad():
-    dummy = env.reset().unsqueeze(0)
-    value_net_cpu(dummy["observation"])
-
-
-print('did dummy forward')
-torch.save(value_net_cpu.state_dict(), "ppo_critic_weights.pt")
-
-
