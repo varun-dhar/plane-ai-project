@@ -13,13 +13,14 @@ from mavlink_interface import MavlinkInterface
 
 
 class GazeboPlaneEnv(gym.Env):
-	def __init__(self):
-		home = os.getenv("HOME")
-		self.fixture = TestFixture(f'{home}/sitl_models/Gazebo/worlds/vtail_runway.sdf')
-		self.fixture.finalize()
+	def __init__(self, start_gazebo=True):
+		if start_gazebo:
+			home = os.getenv("HOME")
+			self.fixture = TestFixture(f'{home}/sitl_models/Gazebo/worlds/vtail_runway.sdf')
+			self.fixture.finalize()
 
-		self.server = self.fixture.server()
-		self.server.run(False, 0, False)
+			self.server = self.fixture.server()
+			self.server.run(False, 0, False)
 
 		self.plane = MavlinkInterface()
 		self.observation_space = gym.spaces.Dict({
@@ -75,6 +76,8 @@ class GazeboPlaneEnv(gym.Env):
 	def step(self, action):
 		airspeed = action[0]
 		altitude = action[1]
+		if altitude < 40:
+			altitude = 40
 		self.plane.set_speed_alt(airspeed, altitude)
 		obs = self._get_obs()
 		truncated = obs['altitude'] < 5 or obs['altitude'] > 3050

@@ -17,6 +17,7 @@ from torchrl.objectives import ClipPPOLoss
 from torchrl.objectives.value import GAE
 from tqdm import tqdm
 import gazebo_gym
+from matplotlib import pyplot as plt
 
 device = (
 	torch.device(0)
@@ -211,13 +212,35 @@ for i, tensordict_data in enumerate(collector):
 	scheduler.step()
 
 print("done training")
+
+plt.figure()
+plt.plot(logs["reward"])
+plt.title("Training Rewards (average)")
+plt.savefig('training-rewards.png')
+
+plt.figure()
+plt.plot(logs["step_count"])
+plt.title("Max step count (training)")
+plt.savefig('step-count-train.png')
+
+plt.figure()
+plt.plot(logs["eval reward (sum)"])
+plt.title("Return (test)")
+plt.savefig('return-test.png')
+
+plt.figure()
+plt.plot(logs["eval step_count"])
+plt.title("Max step count (test)")
+plt.savefig('step-count-test.png')
+
+print('saved plots, saving actor')
 torch.save(actor_net.to(torch.device('cpu')).state_dict(), "ppo_actor_weights.pt")
 print("saving value module")
 
 value_net_cpu = value_net.to(torch.device('cpu'))
 with torch.no_grad():
-    dummy = env.reset().unsqueeze(0)
-    value_net_cpu(dummy["observation"])
+    dummy = env.reset().unsqueeze(0)["observation"].to(torch.float32).to(torch.device('cpu'))
+    value_net_cpu(dummy)
 
 
 print('did dummy forward')
