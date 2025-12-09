@@ -99,8 +99,8 @@ value_net = nn.Sequential(
 )
 
 with torch.no_grad():
-    dummy = env.reset().unsqueeze(0)
-    value_net(dummy["observation"])
+	dummy = env.reset().unsqueeze(0)
+	value_net(dummy["observation"])
 
 value_module = ValueOperator(
 	module=value_net,
@@ -235,15 +235,4 @@ plt.savefig('step-count-test.png')
 
 print('saved plots, saving actor')
 torch.save(actor_net.to(torch.device('cpu')).state_dict(), "ppo_actor_weights.pt")
-print("saving value module")
-
-value_net_cpu = value_net.to(torch.device('cpu'))
-with torch.no_grad():
-    dummy = env.reset().unsqueeze(0)["observation"].to(torch.float32).to(torch.device('cpu'))
-    value_net_cpu(dummy)
-
-
-print('did dummy forward')
-torch.save(value_net_cpu.state_dict(), "ppo_critic_weights.pt")
-
 
