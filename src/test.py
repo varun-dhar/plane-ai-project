@@ -3,7 +3,7 @@ from torch import nn
 from torchrl.envs import (Compose, DoubleToFloat, ObservationNorm, StepCounter,
 						  TransformedEnv, CatTensors)
 from torchrl.envs.libs.gym import GymEnv
-from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
+from torchrl.envs.utils import ExplorationType, set_exploration_type
 from torchrl.modules import ProbabilisticActor, TanhNormal
 from tensordict.nn.distributions import NormalParamExtractor
 import gazebo_gym

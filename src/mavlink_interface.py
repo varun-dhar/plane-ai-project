@@ -4,11 +4,9 @@ MAVLink interface for the plane RL project (Step 2A).
 Provides a small wrapper around pymavlink so we can:
 - connect to ArduPilot SITL
 - read the current aircraft state
-- optionally compute distance to a target point - not done yet
 """
 
-from typing import Optional, Dict, Any
-from pymavlink import mavutil, mavwp
+from pymavlink import mavutil
 from pymavlink.dialects.v20 import ardupilotmega as mavlink
 import pyproj
 import math
@@ -28,12 +26,15 @@ def verify_ack(connection: mavutil.mavtcp, cmd_id: int, failure_message: str, di
 # full startup pipeline
 class MavlinkInterface:
 	def connect(self):
+		'''
+		Connects to SITL over MAVLink
+		'''
 		connection = mavutil.mavlink_connection(self.connection_str,
-																	 planner_format=False,
-																	 notimestamps=True,
-																	 robust_parsing=True,
-																	 dialect="ardupilotmega",
-																	 )
+												planner_format=False,
+												notimestamps=True,
+												robust_parsing=True,
+												dialect="ardupilotmega",
+												)
 		if connection.wait_heartbeat(timeout=self.timeout_s) is None:
 			raise Exception("Could not connect to MAVProxy")
 		return connection
@@ -45,11 +46,11 @@ class MavlinkInterface:
 	) -> None:
 		self.timeout_s = timeout_s
 		self.connection_str = connection_str
-		self.connection: mavutil.mavtcp = None# self.connect()
+		self.connection: mavutil.mavtcp | None = None
 		# Converter from MSL altitude to WGS84 altitude (geoid -> ellipsoid)
 		self.msl_to_wgs84 = pyproj.Transformer.from_crs(4979, 5773, always_xy=True)
 
-		# battery tracking variables - simulate fuel consumption
+		# battery tracking variables - simulate fuel consumption. Values taken from example model plane configuration.
 		self.battery_max_current = 29
 		self.battery_ah = 3
 		self.battery_remaining_pct = 100
@@ -58,7 +59,7 @@ class MavlinkInterface:
 
 	# ------------------------ state reading ------------------------
 
-	# RL Loop will call evry step
+	# RL Loop will call every step
 	def get_state(self) -> dict[str, float]:
 		"""
 		Read the current aircraft state.
@@ -115,7 +116,7 @@ class MavlinkInterface:
 			lon = 0.0
 			alt_m = 0.0
 
-		# Speed + heading
+		# Speed + throttle
 		if hud is not None:
 			airspeed_mps = float(hud.airspeed)
 			throttle = hud.throttle
@@ -131,14 +132,17 @@ class MavlinkInterface:
 			wind_speed_mps = 0.0
 			wind_dir_deg = 0.0
 
-		# Fuel estimate (using battery_remaining as a proxy). Consumes battery based on throttle & current draw.
+		# Fuel estimate (using battery_remaining as a proxy). Does not seem to be as reliable as previously thought
+		'''
 		if sys_status is not None and sys_status.battery_remaining != -1:
 			fuel_remaining = sys_status.battery_remaining / 100.0
 		else:
 			fuel_remaining = 1.0  # assume full if unknown
+		'''
 
-		batt_used = (throttle * self.battery_max_current * ((
-																		time.time_ns() - self.last_time_step) / 3.6e12 * 10)) / self.battery_ah * 100 if self.last_time_step > 0 else 0
+		# Fuel estimate: Consumes battery based on throttle & current draw.
+		batt_used = ((throttle * self.battery_max_current * ((time.time_ns() - self.last_time_step) / 3.6e12 * 10))
+					 / self.battery_ah * 100) if self.last_time_step > 0 else 0
 		self.last_time_step = time.time_ns()
 		self.battery_remaining_pct -= batt_used
 
@@ -159,10 +163,14 @@ class MavlinkInterface:
 		}
 
 	def reset(self):
+		'''
+		Resets SITL - reboots if we have already connected to SITL
+		'''
 		if self.connection:
 			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
-											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 0, 0, 0, 0, 0, 0, 0)
-			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component, mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, 0, 1, 0, 0, 0, 0, 0, 0)
+												  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 0, 0, 0, 0, 0, 0, 0)
+			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
+												  mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, 0, 1, 0, 0, 0, 0, 0, 0)
 		self.connection = self.connect()
 		# request message streams
 		messages = {
@@ -177,29 +185,17 @@ class MavlinkInterface:
 												  msg_id, int(0.1e6), 0, 0, 0, 0, 0, 0)
 			verify_ack(self.connection, mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, f'Failed to request {name}')
 
-
-
-
-	# AUTO loads the mission -> GUIDED gives control back to RL agent.
+	# TAKEOFF takes off -> GUIDED gives control back to RL agent.
 	def takeoff(self):
-		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_DO_SET_MODE, 0, mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
 											  mavlink.PLANE_MODE_TAKEOFF,
 											  0, 0, 0, 0, 0)
-#		self.connection.waypoint_clear_all_send()
-#		self.connection.waypoint_count_send(1)
-#		self.connection.mav.mission_item_int_send(self.connection.target_system, self.connection.target_component, 0,
-#												  mavlink.MAV_FRAME_GLOBAL,
-#												  mavlink.MAV_CMD_NAV_TAKEOFF, 1, 0, 0, 10, 0, 0,
-#												  0, 0, 10, 0)
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
 		while not verify_ack(self.connection, mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 'Failed to arm', die=False):
 			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
-											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
-		# self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
-		#									  mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, 0, 10)
+												  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_DO_SET_MODE, 0, mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
 											  mavlink.PLANE_MODE_GUIDED,
@@ -207,7 +203,6 @@ class MavlinkInterface:
 
 	# Sends a single waypoint in GLOBAL frame - airplane target destination
 	def set_waypoint(self, lat: float, lon: float, alt: float = 10):
-		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.waypoint_clear_all_send()
 		self.connection.waypoint_count_send(1)
 		self.connection.mav.mission_item_int_send(self.connection.target_system, self.connection.target_component, 0,
@@ -217,21 +212,21 @@ class MavlinkInterface:
 
 	# RL agent can control speed and altitude at each step if needed.
 	def set_speed_alt(self, airspeed: float, alt: float) -> bool:
-		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_int_send(self.connection.target_system, self.connection.target_component,
 											 mavlink.MAV_FRAME_GLOBAL,
 											 mavlink.MAV_CMD_GUIDED_CHANGE_SPEED, 0, 0, mavlink.SPEED_TYPE_AIRSPEED,
 											 airspeed, -1, 0, 0, 0, 0)
-		changed_speed = verify_ack(self.connection, mavlink.MAV_CMD_COMPONENT_GUIDED_CHANGE_SPEED, 'Failed to change speed', die=False)
+		# Speed change may fail if it would be infeasible to change to the desired speed at the given time
+		changed_speed = verify_ack(self.connection, mavlink.MAV_CMD_COMPONENT_GUIDED_CHANGE_SPEED,
+								   'Failed to change speed', die=False)
 		self.connection.mav.command_int_send(self.connection.target_system, self.connection.target_component,
 											 mavlink.MAV_FRAME_GLOBAL,
 											 mavlink.MAV_CMD_DO_CHANGE_ALTITUDE, 0, 0,
 											 alt, mavlink.MAV_FRAME_GLOBAL, 0, 0, 0, 0, 0)
 		return changed_speed
 
-	# domain randomization 
+	# domain randomization - change wind speed, direction, turbulence, and speed variance based on altitude
 	def set_wind(self, direction: float, speed: float, turbulence: float):
-		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
 										   'SIM_WIND_SPD'.encode('ascii'), speed, mavlink.MAV_PARAM_TYPE_REAL32)
 		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
@@ -245,7 +240,6 @@ class MavlinkInterface:
 
 	# Resets the internal battery estimate and sets SITL’s sim voltage back to normal.
 	def reset_battery(self):
-		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.battery_remaining_pct = 100
 		self.connection.mav.param_set_send(self.connection.target_system, self.connection.target_component,
 										   'SIM_BATT_VOLTAGE'.encode('ascii'), 12.6, mavlink.MAV_PARAM_TYPE_REAL32)

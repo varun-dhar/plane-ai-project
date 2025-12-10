@@ -12,6 +12,9 @@ from mavlink_interface import MavlinkInterface
 
 
 class GazeboPlaneEnv(gym.Env):
+	'''
+	Gymnasium environment for controlling a model plane with ArduPilot SITL over MAVLink
+	'''
 	def __init__(self, start_gazebo=True):
 		if start_gazebo:
 			# gazebo world startup - starts a Gazebo server instance headless with runway world.
@@ -20,7 +23,7 @@ class GazeboPlaneEnv(gym.Env):
 			self.server = self.fixture.server()
 			self.server.run(False, 0, False)
 
-		self.plane = MavlinkInterface() # start MavLinkInterface - connection to ArduPilot SITL.
+		self.plane = MavlinkInterface()  # start MavLinkInterface - connection to ArduPilot SITL.
 
 		# observation space: 1-D box
 		self.observation_space = gym.spaces.Dict({
@@ -30,20 +33,21 @@ class GazeboPlaneEnv(gym.Env):
 			"wind_dir": gym.spaces.Box(0., 2 * np.pi, shape=(1,), dtype=np.float32),
 			"wind_speed": gym.spaces.Box(0., 20., shape=(1,), dtype=np.float32),
 		})
-		#action space
+		# action space
 		self.action_space = gym.spaces.Box(5., 100., shape=(2,), dtype=np.float32)
 
-		# track starting, ending coordinates, list of positions and fuel
+		# track starting, ending coordinates, list of positions, and fuel
+		# Used for calculating efficiency
 		self.dest_lat: float = 0
 		self.dest_lon: float = 0
 		self.start_lat: float = 0
 		self.start_lon: float = 0
 		self.positions: list[tuple[float, float]] = []
 		self.fuel_left: list[float] = []
-		self.wgs84_geod = pyproj.Geod(ellps='WGS84') 
+
+		self.wgs84_geod = pyproj.Geod(ellps='WGS84')
 		# switches to AUTO → loads takeoff → arms → switches to GUIDED. ensures the plane is airborne before RL begins.
 		self.plane.takeoff()
-		#self.server.set_paused()
 
 	# returns current state of aircraft
 	def _get_obs(self):
@@ -61,14 +65,14 @@ class GazeboPlaneEnv(gym.Env):
 			options: dict[str, Any] | None = None,
 	) -> tuple[ObsType, dict[str, Any]]:
 		super().reset(seed=seed)
-		#self.plane.reset()
-		#self.server.reset_all()
-		#self.plane.takeoff()
 		obs = self._get_obs()
+
 		# Sample a random destination point within 500 km
 		max_dist_km = 500
+		# Maximum latitude delta within range
 		max_lat_deg = max_dist_km / 111.111
 		lat_delta = self.np_random.uniform(-max_lat_deg, max_lat_deg)
+		# Maximum longitude delta within range
 		max_lon_deg = max_lat_deg * math.cos(math.radians(lat_delta)) - lat_delta * 111.111
 		lon_delta = self.np_random.uniform(-abs(max_lon_deg), abs(max_lon_deg))
 		self.start_lat = obs['latitude']
@@ -76,23 +80,24 @@ class GazeboPlaneEnv(gym.Env):
 		self.positions = [(self.start_lat, self.start_lon)]
 		self.dest_lat = self.start_lat + lat_delta
 		self.dest_lon = self.start_lon + lon_delta
-		self.plane.reset_battery() # reset battery 
+
+		self.plane.reset_battery()
 		self.fuel_left = [obs['fuel_remaining']]
-		self.plane.set_waypoint(self.dest_lat, self.dest_lon, 10) # set destination location
+		self.plane.set_waypoint(self.dest_lat, self.dest_lon, 10)  # set destination location
 		# direction, speed, turb respectively
-		self.plane.set_wind(self.np_random.uniform(0., 360.), self.np_random.uniform(5., 100.), self.np_random.uniform(0., 12.85))
+		# Values chosen based on max speed and turbulence values a plane of this class may experience
+		self.plane.set_wind(self.np_random.uniform(0., 360.), self.np_random.uniform(5., 100.),
+							self.np_random.uniform(0., 12.85))
 
 		return self._obs_to_user(obs), {}
 
 	def step(self, action):
 		airspeed = action[0]
 		altitude = action[1]
-		if altitude < 40:
-			altitude = 40
 		speed_changed = self.plane.set_speed_alt(airspeed, altitude)
-		#read new state
+		# read new state
 		obs = self._get_obs()
-		truncated = obs['altitude'] < 5 or obs['altitude'] > 3050 # out of bounds altitude
+		truncated = obs['altitude'] < 5 or obs['altitude'] > 3050  # out of bounds altitude
 		plane_lat = obs['latitude']
 		plane_lon = obs['longitude']
 		# track fuel used, distance traveled since last step, crashes, stalls, and reaching target.
@@ -107,7 +112,7 @@ class GazeboPlaneEnv(gym.Env):
 		self.positions.append((plane_lat, plane_lon))
 		self.fuel_left.append(obs['fuel_remaining'])
 
-		# Return (obs, reward, done, truncated, info
+		# Return (obs, reward, done, truncated, info)
 		return self._obs_to_user(obs), reward, done, truncated, {}
 
 
@@ -116,5 +121,3 @@ gym.register(
 	entry_point=GazeboPlaneEnv,
 	max_episode_steps=300,  # Prevent infinite episodes
 )
-
-

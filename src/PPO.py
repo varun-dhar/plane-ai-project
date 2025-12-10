@@ -2,8 +2,6 @@ from collections import defaultdict
 
 import torch
 from tensordict.nn import TensorDictModule
-from tensordict.nn.distributions import NormalParamExtractor
-from torch import nn
 from torchrl.collectors import SyncDataCollector
 from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
@@ -19,6 +17,8 @@ from tqdm import tqdm
 import gazebo_gym
 from matplotlib import pyplot as plt
 import time
+
+from src import actor, critic
 
 device = (
 	torch.device(0)
@@ -58,29 +58,18 @@ start = time.time()
 
 env.transform[1].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
 
-duration = time.time()-start
+duration = time.time() - start
 
 print(f'stats inited in {duration}s')
 
 check_env_specs(env)
 
-actor_net = nn.Sequential(
-	nn.LazyLinear(num_cells, device=device),
-	nn.Tanh(),
-	nn.LazyLinear(num_cells, device=device),
-	nn.Tanh(),
-	nn.LazyLinear(num_cells, device=device),
-	nn.Tanh(),
-	nn.LazyLinear(2 * env.action_spec.shape[-1], device=device),
-	NormalParamExtractor(),
-)
-
-policy_module = TensorDictModule(
-	actor_net, in_keys=["observation"], out_keys=["loc", "scale"]
-)
+actor_net = actor.Actor(num_cells, env, device)
 
 policy_module = ProbabilisticActor(
-	module=policy_module,
+	module=TensorDictModule(
+		actor_net, in_keys=["observation"], out_keys=["loc", "scale"]
+	),
 	spec=env.action_spec,
 	in_keys=["loc", "scale"],
 	distribution_class=TanhNormal,
@@ -92,22 +81,14 @@ policy_module = ProbabilisticActor(
 	# we'll need the log-prob for the numerator of the importance weights
 )
 
-value_net = nn.Sequential(
-	nn.LazyLinear(num_cells, device=device),
-	nn.Tanh(),
-	nn.LazyLinear(num_cells, device=device),
-	nn.Tanh(),
-	nn.LazyLinear(num_cells, device=device),
-	nn.Tanh(),
-	nn.LazyLinear(1, device=device),
-)
+critic_net = critic.Critic(num_cells, device)
 
 with torch.no_grad():
 	dummy = env.reset().unsqueeze(0)
-	value_net(dummy["observation"])
+	critic_net(dummy["observation"])
 
-value_module = ValueOperator(
-	module=value_net,
+critic_module = ValueOperator(
+	module=critic_net,
 	in_keys=["observation"],
 )
 
@@ -126,12 +107,12 @@ replay_buffer = ReplayBuffer(
 )
 
 advantage_module = GAE(
-	gamma=gamma, lmbda=lmbda, value_network=value_module, average_gae=True, device=device,
+	gamma=gamma, lmbda=lmbda, value_network=critic_module, average_gae=True, device=device,
 )
 
 loss_module = ClipPPOLoss(
 	actor_network=policy_module,
-	critic_network=value_module,
+	critic_network=critic_module,
 	clip_epsilon=clip_epsilon,
 	entropy_bonus=bool(entropy_eps),
 	entropy_coeff=entropy_eps,
@@ -217,7 +198,7 @@ for i, tensordict_data in enumerate(collector):
 	# this is a nice-to-have but nothing necessary for PPO to work.
 	scheduler.step()
 
-duration = time.time()-start
+duration = time.time() - start
 
 print(f"done training, trained in {duration}s")
 
@@ -251,4 +232,3 @@ plt.savefig('step-count-test.png')
 
 print('saved plots, saving actor')
 torch.save(actor_net.to(torch.device('cpu')).state_dict(), "ppo_actor_weights.pt")
-
