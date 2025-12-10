@@ -392,6 +392,7 @@ dependencies:
       - pyserial==3.5
       - runcmd==2020.12.3
 variables:
-  GZ_SIM_SYSTEM_PLUGIN_PATH: '/home/dhar.v/ardupilot_gazebo/build:'
-  GZ_SIM_RESOURCE_PATH: '/home/dhar.v/ardupilot_gazebo/worlds:/home/dhar.v/ardupilot_gazebo/models:/home/dhar.v/sitl_models/Gazebo/models/:/home/dhar.v/sitl_models/Gazebo/worlds/:'
-  GZ_PLUGIN_PATH: /home/dhar.v/ardupilot_gazebo/build
+  GZ_SIM_SYSTEM_PLUGIN_PATH: 'ardupilot_gazebo/build:'
+  GZ_SIM_RESOURCE_PATH: 'ardupilot_gazebo/worlds:ardupilot_gazebo/models:sitl_models/Gazebo/models/:sitl_models/Gazebo/worlds/:'
+  GZ_PLUGIN_PATH: 'ardupilot_gazebo/build'
+  GZ_VERSION: 'jetty'
