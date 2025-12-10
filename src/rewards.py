@@ -1,6 +1,6 @@
 def reward(
 		fuel_diff, dist_traveled,
-		crashed=False, stalled=False, reached=False,
+		crashed=False, stalled=False, reached=False, speed_changed=True
 ) -> float:
 	"""
 	Reward function
@@ -19,6 +19,8 @@ def reward(
 		r -= 500
 	if stalled:
 		r -= 200
+	if not speed_changed:
+		r -= 20
 
 	# reaches goal
 	if reached:

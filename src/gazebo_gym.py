@@ -15,7 +15,7 @@ class GazeboPlaneEnv(gym.Env):
 	def __init__(self, start_gazebo=True):
 		if start_gazebo:
 			# gazebo world startup - starts a Gazebo server instance headless with runway world.
-	    	self.fixture = TestFixture('sitl_models/Gazebo/worlds/vtail_runway.sdf')
+			self.fixture = TestFixture('sitl_models/Gazebo/worlds/vtail_runway.sdf')
 			self.fixture.finalize()
 			self.server = self.fixture.server()
 			self.server.run(False, 0, False)
@@ -43,7 +43,7 @@ class GazeboPlaneEnv(gym.Env):
 		self.wgs84_geod = pyproj.Geod(ellps='WGS84') 
 		# switches to AUTO → loads takeoff → arms → switches to GUIDED. ensures the plane is airborne before RL begins.
 		self.plane.takeoff()
-		self.server.set_paused()
+		#self.server.set_paused()
 
 	# returns current state of aircraft
 	def _get_obs(self):
@@ -61,7 +61,9 @@ class GazeboPlaneEnv(gym.Env):
 			options: dict[str, Any] | None = None,
 	) -> tuple[ObsType, dict[str, Any]]:
 		super().reset(seed=seed)
+		#self.plane.reset()
 		#self.server.reset_all()
+		#self.plane.takeoff()
 		obs = self._get_obs()
 		# Sample a random destination point within 500 km
 		max_dist_km = 500
@@ -87,7 +89,7 @@ class GazeboPlaneEnv(gym.Env):
 		altitude = action[1]
 		if altitude < 40:
 			altitude = 40
-		self.plane.set_speed_alt(airspeed, altitude)
+		speed_changed = self.plane.set_speed_alt(airspeed, altitude)
 		#read new state
 		obs = self._get_obs()
 		truncated = obs['altitude'] < 5 or obs['altitude'] > 3050 # out of bounds altitude
@@ -101,7 +103,7 @@ class GazeboPlaneEnv(gym.Env):
 		_, _, dist_traveled = self.wgs84_geod.inv(plane_lon, plane_lat, self.positions[-1][1], self.positions[-1][0])
 		reward = rewards.reward(fuel_diff, dist_traveled, crashed=obs['altitude'] < 5,
 								stalled=obs['pitch'] > 15,
-								reached=distance < 10)
+								reached=distance < 10, speed_changed=speed_changed)
 		self.positions.append((plane_lat, plane_lon))
 		self.fuel_left.append(obs['fuel_remaining'])
 

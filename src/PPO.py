@@ -18,6 +18,7 @@ from torchrl.objectives.value import GAE
 from tqdm import tqdm
 import gazebo_gym
 from matplotlib import pyplot as plt
+import time
 
 device = (
 	torch.device(0)
@@ -30,7 +31,6 @@ lr = 3e-4
 max_grad_norm = 1.0
 
 frames_per_batch = 1000
-# For a complete training, bring the number of frames up to 1M
 total_frames = 50_000
 
 sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
@@ -54,9 +54,13 @@ env = TransformedEnv(
 		StepCounter(),
 	),
 )
+start = time.time()
+
 env.transform[1].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
 
-print('stats inited')
+duration = time.time()-start
+
+print(f'stats inited in {duration}s')
 
 check_env_specs(env)
 
@@ -147,6 +151,8 @@ eval_str = ""
 
 print('training')
 
+start = time.time()
+
 # We iterate over the collector until it reaches the total number of frames it was
 # designed to collect:
 for i, tensordict_data in enumerate(collector):
@@ -211,26 +217,36 @@ for i, tensordict_data in enumerate(collector):
 	# this is a nice-to-have but nothing necessary for PPO to work.
 	scheduler.step()
 
-print("done training")
+duration = time.time()-start
+
+print(f"done training, trained in {duration}s")
 
 plt.figure()
 plt.plot(logs["reward"])
 plt.title("Training Rewards (average)")
+plt.xlabel("Batch Number")
+plt.ylabel("Reward")
 plt.savefig('training-rewards.png')
 
 plt.figure()
 plt.plot(logs["step_count"])
 plt.title("Max step count (training)")
+plt.ylabel("Steps")
+plt.xlabel("Batch Number")
 plt.savefig('step-count-train.png')
 
 plt.figure()
 plt.plot(logs["eval reward (sum)"])
 plt.title("Return (test)")
+plt.ylabel("Reward")
+plt.xlabel("Batch Number")
 plt.savefig('return-test.png')
 
 plt.figure()
 plt.plot(logs["eval step_count"])
 plt.title("Max step count (test)")
+plt.ylabel("Steps")
+plt.xlabel("Batch Number")
 plt.savefig('step-count-test.png')
 
 print('saved plots, saving actor')

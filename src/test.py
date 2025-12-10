@@ -23,9 +23,7 @@ print(device)
 
 num_cells = 2
 
-oneshot = len(sys.argv) == 2 and sys.argv[1] == 'oneshot'
-
-base_env = GymEnv("GazeboPlaneEnv", device=device, start_gazebo=not oneshot)
+base_env = GymEnv("GazeboPlaneEnv", device=device)
 
 env = TransformedEnv(
 	base_env,
@@ -38,7 +36,7 @@ env = TransformedEnv(
 	),
 )
 
-env.transform[1].init_stats(num_iter=10, reduce_dim=0, cat_dim=0)
+env.transform[1].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
 
 actor_net = nn.Sequential(
 	nn.LazyLinear(num_cells, device=device),
@@ -71,39 +69,32 @@ policy_module = ProbabilisticActor(
 )
 
 logs = defaultdict(list)
-if not oneshot:
-    for _ in tqdm(range(100)):
-        with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-            # execute a rollout with the trained policy
-            eval_rollout = env.rollout(1000, policy_module)
-            logs["eval reward"].append(eval_rollout["next", "reward"].mean().item())
-            logs["eval reward (sum)"].append(
-                eval_rollout["next", "reward"].sum().item()
-            )
-            logs["eval step_count"].append(eval_rollout["step_count"].max().item())
-            eval_str = (
-                f"eval cumulative reward: {logs['eval reward (sum)'][-1]: 4.4f} "
-                f"(init: {logs['eval reward (sum)'][0]: 4.4f}), "
-                f"eval step-count: {logs['eval step_count'][-1]}"
-            )
-            del eval_rollout
-else:
-	while True:
-	    with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-		    # execute a rollout with the trained policy
-	        eval_rollout = env.rollout(1000, policy_module)
-	        logs["eval reward"] = eval_rollout["next", "reward"].cpu()
-	        logs["eval step_count"] = eval_rollout["step_count"].cpu()
-	        del eval_rollout
+for _ in tqdm(range(100)):
+    with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
+        # execute a rollout with the trained policy
+        eval_rollout = env.rollout(1000, policy_module)
+        logs["eval reward"].append(eval_rollout["next", "reward"].mean().item())
+        logs["eval reward (sum)"].append(
+            eval_rollout["next", "reward"].sum().item()
+        )
+        logs["eval step_count"].append(eval_rollout["step_count"].max().item())
+        eval_str = (
+            f"eval cumulative reward: {logs['eval reward (sum)'][-1]: 4.4f} "
+            f"(init: {logs['eval reward (sum)'][0]: 4.4f}), "
+            f"eval step-count: {logs['eval step_count'][-1]}"
+        )
+        del eval_rollout
 
-
-#print(eval_str)
 plt.figure()
 plt.plot(logs["eval reward"])
 plt.title("Return (test)")
+plt.xlabel("Episode")
+plt.ylabel("Reward")
 plt.savefig('return-test.png')
 
-#plt.figure()
-#plt.plot(logs["eval step_count"])
-#plt.title("Max step count (test)")
-#plt.savefig('step-count-test.png')
+plt.figure()
+plt.plot(logs["eval step_count"])
+plt.title("Max step count (test)")
+plt.xlabel("Episode")
+plt.ylabel("Steps")
+plt.savefig('step-count-test.png')

@@ -27,34 +27,25 @@ def verify_ack(connection: mavutil.mavtcp, cmd_id: int, failure_message: str, di
 
 # full startup pipeline
 class MavlinkInterface:
+	def connect(self):
+		connection = mavutil.mavlink_connection(self.connection_str,
+																	 planner_format=False,
+																	 notimestamps=True,
+																	 robust_parsing=True,
+																	 dialect="ardupilotmega",
+																	 )
+		if connection.wait_heartbeat(timeout=self.timeout_s) is None:
+			raise Exception("Could not connect to MAVProxy")
+		return connection
+
 	def __init__(
 			self,
 			connection_str: str = "udp:127.0.0.1:14550",  # connection to SITL
 			timeout_s: int = 30,
 	) -> None:
 		self.timeout_s = timeout_s
-		self.connection: mavutil.mavtcp = mavutil.mavlink_connection(connection_str,
-																	 planner_format=False,
-																	 notimestamps=True,
-																	 robust_parsing=True,
-																	 dialect="ardupilotmega",
-																	 )
-		if self.connection.wait_heartbeat(timeout=self.timeout_s) is None:
-			raise Exception("Could not connect to MAVProxy")
-
-		# request message streams
-		messages = {
-			"SYS_STATUS": mavlink.MAVLINK_MSG_ID_SYS_STATUS,
-			"GLOBAL_POSITION_INT": mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
-			"VFR_HUD": mavlink.MAVLINK_MSG_ID_VFR_HUD,
-			"WIND": mavlink.MAVLINK_MSG_ID_WIND,
-		}
-		for name, msg_id in messages.items():
-			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
-												  mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
-												  msg_id, int(0.1e6), 0, 0, 0, 0, 0, 0)
-			verify_ack(self.connection, mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, f'Failed to request {name}')
-
+		self.connection_str = connection_str
+		self.connection: mavutil.mavtcp = None# self.connect()
 		# Converter from MSL altitude to WGS84 altitude (geoid -> ellipsoid)
 		self.msl_to_wgs84 = pyproj.Transformer.from_crs(4979, 5773, always_xy=True)
 
@@ -63,6 +54,7 @@ class MavlinkInterface:
 		self.battery_ah = 3
 		self.battery_remaining_pct = 100
 		self.last_time_step = 0
+		self.reset()
 
 	# ------------------------ state reading ------------------------
 
@@ -166,20 +158,45 @@ class MavlinkInterface:
 			"pitch": pitch
 		}
 
+	def reset(self):
+		if self.connection:
+			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
+											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 0, 0, 0, 0, 0, 0, 0)
+			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component, mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, 0, 1, 0, 0, 0, 0, 0, 0)
+		self.connection = self.connect()
+		# request message streams
+		messages = {
+			"SYS_STATUS": mavlink.MAVLINK_MSG_ID_SYS_STATUS,
+			"GLOBAL_POSITION_INT": mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
+			"VFR_HUD": mavlink.MAVLINK_MSG_ID_VFR_HUD,
+			"WIND": mavlink.MAVLINK_MSG_ID_WIND,
+		}
+		for name, msg_id in messages.items():
+			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
+												  mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+												  msg_id, int(0.1e6), 0, 0, 0, 0, 0, 0)
+			verify_ack(self.connection, mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, f'Failed to request {name}')
+
+
+
+
 	# AUTO loads the mission -> GUIDED gives control back to RL agent.
 	def takeoff(self):
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_DO_SET_MODE, 0, mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-											  mavlink.PLANE_MODE_AUTO,
+											  mavlink.PLANE_MODE_TAKEOFF,
 											  0, 0, 0, 0, 0)
-		self.connection.waypoint_clear_all_send()
-		self.connection.waypoint_count_send(1)
-		self.connection.mav.mission_item_int_send(self.connection.target_system, self.connection.target_component, 0,
-												  mavlink.MAV_FRAME_GLOBAL,
-												  mavlink.MAV_CMD_NAV_TAKEOFF, 1, 0, 0, 10, 0, 0,
-												  0, 0, 10, 0)
+#		self.connection.waypoint_clear_all_send()
+#		self.connection.waypoint_count_send(1)
+#		self.connection.mav.mission_item_int_send(self.connection.target_system, self.connection.target_component, 0,
+#												  mavlink.MAV_FRAME_GLOBAL,
+#												  mavlink.MAV_CMD_NAV_TAKEOFF, 1, 0, 0, 10, 0, 0,
+#												  0, 0, 10, 0)
 		self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
+											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+		while not verify_ack(self.connection, mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 'Failed to arm', die=False):
+			self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 											  mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
 		# self.connection.mav.command_long_send(self.connection.target_system, self.connection.target_component,
 		#									  mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, 0, 10)
@@ -199,16 +216,18 @@ class MavlinkInterface:
 												  int(lat / 1e7), int(lon / 1e7), alt / 1000, 0)
 
 	# RL agent can control speed and altitude at each step if needed.
-	def set_speed_alt(self, airspeed: float, alt: float):
+	def set_speed_alt(self, airspeed: float, alt: float) -> bool:
 		self.connection.mav: mavlink.MAVLink = self.connection.mav
 		self.connection.mav.command_int_send(self.connection.target_system, self.connection.target_component,
 											 mavlink.MAV_FRAME_GLOBAL,
 											 mavlink.MAV_CMD_GUIDED_CHANGE_SPEED, 0, 0, mavlink.SPEED_TYPE_AIRSPEED,
 											 airspeed, -1, 0, 0, 0, 0)
+		changed_speed = verify_ack(self.connection, mavlink.MAV_CMD_COMPONENT_GUIDED_CHANGE_SPEED, 'Failed to change speed', die=False)
 		self.connection.mav.command_int_send(self.connection.target_system, self.connection.target_component,
 											 mavlink.MAV_FRAME_GLOBAL,
 											 mavlink.MAV_CMD_DO_CHANGE_ALTITUDE, 0, 0,
 											 alt, mavlink.MAV_FRAME_GLOBAL, 0, 0, 0, 0, 0)
+		return changed_speed
 
 	# domain randomization 
 	def set_wind(self, direction: float, speed: float, turbulence: float):
